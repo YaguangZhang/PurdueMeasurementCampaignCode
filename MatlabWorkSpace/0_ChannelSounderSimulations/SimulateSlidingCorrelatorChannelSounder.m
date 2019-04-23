@@ -37,7 +37,7 @@ TDLTotalWidthInS = 150.*10^(-9);
 TDLTapWidthInS = TDLTotalWidthInS/10;
 TDLDecayExp = -3;                   % Controls the extenuation rate.
 
-% % For the millimeter wave (mm-wave) signal. 
+% % For the millimeter wave (mm-wave) signal.
 %  F_C = 28e9;  % Carrier Frequency in Hz.
 
 % Seed for simulation.
@@ -364,6 +364,7 @@ saveas(hMultipliedPnSigSpectrumFromFreqZoomed, ...
     [num2str(figCnt), '_', curFigName, '.png']));
 
 % Clear unnecessary variables to free up memory.
+close all;
 clearvars ySpectrumFromFreqDomainMag ySpectrumFromFreqDomainPha;
 
 toc;
@@ -501,6 +502,7 @@ saveas(hMultipliedPnSignalLowPassedSpectrum, ...
     [num2str(figCnt), '_', curFigName, '.png']));
 
 % Clear unnecessary variables to free up memory.
+close all;
 clearvars y yHighPassed yHighPassedToShow yLowPassed yLowPassedToShow ...
     ySpectrumFromTimeDomainLowPassed ySpectrumFromTimeDomainHighPassed  ...
     ySpectrumFromTimeDomainLowPassedMag ...
@@ -566,16 +568,23 @@ for dixTDLSim = 1:numTDLSims
     axC = gca; % current axes
     axC.XColor = colorChannel;
     axC.YColor = colorChannel;
-
+    
     hDilutedOutput = plot(yTDLTimePtsToShow, yTDLToShow/yTDLMax, ...
         '-', 'Color', colorDilutatedOutput);
     
     ylabel('Normalized Magnitude');
     xlabel('Time (s)');
-    legend([hDilutedOutput, hChannel], 'Time-Diluted Output', 'Channel');
+    legend([hDilutedOutput, hChannel], ...
+        'Time-Diluted Output', 'Channel', ...
+        'AutoUpdate','off');
     grid minor;
     axis tight;
-    xlim([curTDLImpulseRespTimePts(1), curTDLImpulseRespTimePts(end)]);
+    
+    % The channel is zero before time zero.
+    curXMin = curTDLImpulseRespTimePts(1)-0.5*TDLTapWidthInS;
+    plot([curXMin 0], [0, 0], ...
+        '--', 'Color', colorChannel);
+    xlim([curXMin, curTDLImpulseRespTimePts(end)]);
     
     saveas(hDilutedOutputVsChannel, ...
         fullfile(ABS_PATH_TO_SAVE_PLOTS, ...
@@ -584,5 +593,169 @@ for dixTDLSim = 1:numTDLSims
     toc;
 end
 
+% Clear unnecessary variables to free up memory.
+close all;
+clearvars yTDL yTDLSpectrum;
+
 disp('Done!');
+
+%% Time Resolution
+% We will simulate multiple implementations of the 2-tap delay line model
+% with different time delays to present the time resolution of our sounder.
+
+disp('Simulating 2-tap delay line model with different delays ...');
+
+numSims = 30;
+delaysInSToSim = linspace(1, 20, numSims).*10^(-9);
+numTaps = 2;
+
+% For all simulations, we will use the same x range (the x range for the
+% longest simulation) for plotting for better comparison.
+clearvars xRangeForTimeResolutionTest;
+delaysInSToSim = delaysInSToSim(end:-1:1);
+
+for dixTTSim = 1:numSims
+    disp(['    Simulation ', ...
+        num2str(dixTTSim), '/', num2str(numSims), '...']);
+    tic;
+    
+    curDelayInS = delaysInSToSim(dixTTSim);
+    
+    % Simulate the channel.
+    [curTTImpulseResp, curTTImpulseRespTimePts] ...
+        = genTruncatedTrainImpulseResponse(numTaps, F_SIM, ...
+        TDLTapWidthInS, curDelayInS);
+    
+    % We will FFT the time domain signal because it is faster.
+    yTT = cconv(xPnSigTx, curTTImpulseResp, length(xPnSigTx)).*xPnSigRx;
+    assert(length(yTT) == numSamps, 'Variable numSamps is outdated!');
+    
+    % LPF the RX signal and covert it back to time domain.
+    yTTSpectrum = fft(yTT);
+    yTTSpectrum(boolsLPEliminated) = 0;
+    yTT = ifft(yTTSpectrum);
+    
+    % Down sample signals for plotting.
+    yTTToShow = fftshift(yTT(1:decNumForOverview:end));
+    yTTimePtsToShow = timePts(1:decNumForOverview:end)/gamma;
+    
+    % Align the RX signal with the channel impulse response according to
+    % their first peak that is high enough.
+    yTTMax = max(yTTToShow);
+    
+    [pks,locs] = findpeaks(yTTToShow);
+    yTTFirstHighEnoughPeakIdx = find(pks > (0.9.*yTTMax));
+    
+    yTTFirstPeak = pks(yTTFirstHighEnoughPeakIdx(1));
+    yTTFirstPeakIdx = locs(yTTFirstHighEnoughPeakIdx(1));
+    if length(yTTFirstHighEnoughPeakIdx)>1
+        yTTSecondPeakIdx = locs(yTTFirstHighEnoughPeakIdx(2));
+        flagValleyAvailable = true;
+    else
+        flagValleyAvailable = false;
+    end
+    
+    % Align the RX signal with the channel impulse response according to
+    % their first peak location.
+    channelMax = max(curTTImpulseResp);
+    
+    [pks,locs] = findpeaks(curTTImpulseResp);
+    channelFirstHighEnoughPeakIdx = find(pks > (0.9.*channelMax), 1);
+    
+    channelFirstPeak = pks(channelFirstHighEnoughPeakIdx);
+    channelFirstPeakIdx = locs(channelFirstHighEnoughPeakIdx);
+    
+    channelFirstPeakTime = curTTImpulseRespTimePts(channelFirstPeakIdx);
+    yTTimePtsToShow = yTTimePtsToShow ...
+        + channelFirstPeakTime - yTTimePtsToShow(yTTFirstPeakIdx);
+    
+    % Measure the peak to valley distance.
+    yTTToShow = yTTToShow/yTTMax;
+    
+    if flagValleyAvailable
+        [~, yTTValleyIndices] ...
+            = findpeaks(-yTTToShow(yTTFirstPeakIdx:yTTSecondPeakIdx));
+        [~, yTTValleyIdxPos] ...
+            = min(yTTValleyIndices-(yTTFirstPeakIdx+yTTSecondPeakIdx)/2);
+        yTTValleyIdx = yTTValleyIndices(yTTValleyIdxPos)+yTTFirstPeakIdx-1;
+    
+        peakToValleyRatio = 1-yTTToShow(yTTValleyIdx);
+    end
+    
+    % Plot.
+    figCnt = figCnt+1;
+    curFigName = 'timeResolutionTest';
+    hTimeResolutionTest = figure('name', curFigName);
+    hold on;
+    
+    colorChannel = 'k';
+    colorDilutatedOutput = 'b';
+    shiftInX = curTTImpulseRespTimePts(channelFirstPeakIdx);
+    
+    hChannel = plot( ...
+        curTTImpulseRespTimePts-shiftInX, curTTImpulseResp/channelMax, ...
+        '--', 'Color', colorChannel);
+    axC = gca; % current axes
+    axC.XColor = colorChannel;
+    axC.YColor = colorChannel;
+    
+    hDilutedOutput = plot(yTTimePtsToShow-shiftInX, yTTToShow, ...
+        '-', 'Color', colorDilutatedOutput);
+    
+    ylabel('Normalized Magnitude');
+    xlabel('Time (s)');
+    legend([hDilutedOutput, hChannel], 'Time-Diluted Output', 'Channel', ...
+        'AutoUpdate','off');
+    transparentizeCurLegends;
+    grid minor;
+    axis tight;
+    
+    if ~exist('xRangeForTimeResolutionTest', 'var')
+        xRangeForTimeResolutionTest ...
+            = [curTTImpulseRespTimePts(1)-0.5*TDLTapWidthInS, ...
+            curTTImpulseRespTimePts(end)+1.5*TDLTapWidthInS]-shiftInX;
+    end
+    xlim(xRangeForTimeResolutionTest);
+    
+    % The channel is zero for parts not covered by the simulated channel
+    % impulse response.
+    plot([xRangeForTimeResolutionTest(1) 0]-shiftInX, [0, 0], ...
+        '--', 'Color', colorChannel);
+    plot([curTTImpulseRespTimePts(end)-shiftInX ...
+        xRangeForTimeResolutionTest(2)], ...
+        [0, 0], ...
+        '--', 'Color', colorChannel);
+    
+    if flagValleyAvailable
+        % Show the peak to valley distance on the plot.
+        textCenterX = yTTimePtsToShow(yTTValleyIdx)-shiftInX;
+        textCenterY = yTTToShow(yTTValleyIdx) + peakToValleyRatio/2;
+
+        deltsYToAvoidText = 0.03;
+        drawArrow = @(x,y) quiver( x(1),y(1),x(2)-x(1),y(2)-y(1),0, 'Color', darkGrey);
+        hArrowUp = drawArrow([textCenterX textCenterX], ...
+            [textCenterY+deltsYToAvoidText 1]);
+        uistack(hArrowUp, 'bottom');
+        hArrowDown = drawArrow([textCenterX textCenterX], ...
+            [textCenterY-deltsYToAvoidText yTTToShow(yTTValleyIdx)]);
+        uistack(hArrowDown, 'bottom');
+
+        text(textCenterX, textCenterY, ...
+            [num2str(peakToValleyRatio.*100, '%.1f'), '%'], ...
+            'HorizontalAlignment', 'center');
+    end
+    
+    saveas(hTimeResolutionTest, ...
+        fullfile(ABS_PATH_TO_SAVE_PLOTS, ...
+        [num2str(figCnt), '_', curFigName, '.png']));
+    
+    toc;
+end
+
+% Clear unnecessary variables to free up memory.
+close all;
+clearvars yTT yTTSpectrum;
+
+disp('Done!');
+
 % EOF

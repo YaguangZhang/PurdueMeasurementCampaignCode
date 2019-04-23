@@ -1,20 +1,19 @@
 function [ TDLImpulseResp, TDLImpulseRespTimePts] ...
-    = genTDLImpulseResponse(numTaps, sampleRate, ...
-    TDLTotalWidthInS, TDLTapWidthInS, TDLDecayExp)
-%GENTDLIMPULSERESPONSE Generate an impulse response for an implementation
-%of the Tapped Delay Line (TDL) model.
+    = genTruncatedTrainImpulseResponse(numTaps, sampleRate, ...
+    TDLTapWidthInS, TDLTapDelayInS)
+%GENTRUNCATEDTRAINIMPULSERESPONSE Generate a truncated train (the Tapped
+%Delay Line model with the exact same shape for each tap and the same delay
+%between taps) impulse response.
 %
 % Inputs:
 %   - numTaps
 %     The number of taps.
 %   - sampleRate
 %     The sample rate for the impulse response in Hz.
-%   - TDLTotalWidthInS
-%     The total width of the output impulse response in time.
 %   - TDLTapWidthInS
 %     The width of each tap in time.
-%   - TDLDecayExp
-%     We will use a exponential decay to control the taps' amplitudes.
+%   - TDLTapDelayInS
+%     The delay between adjacent taps.
 %
 % Outputs:
 %   - TDLImpulseResp
@@ -26,6 +25,10 @@ function [ TDLImpulseResp, TDLImpulseRespTimePts] ...
 % Yaguang Zhang, Purdue, 03/04/2019
 
 assert(numTaps>=1, 'There should be at least one tap!');
+assert(TDLTapWidthInS>0, 'Tap width should be positive!');
+
+% The total width of the output impulse response in time.
+TDLTotalWidthInS = TDLTapWidthInS + TDLTapDelayInS*(numTaps-1);
 
 % Initialize the result.
 numSamps = ceil(sampleRate.*TDLTotalWidthInS);
@@ -33,11 +36,9 @@ numSamps = ceil(sampleRate.*TDLTotalWidthInS);
 % matrix.
 TDLImpulseRespMat = zeros(numTaps, numSamps);
 
-% We will control the tap's amplitude according to its location.
-getTapAmplitude = @(x) exp(TDLDecayExp.*x);
 % The first tap always starts at the very beginning.
-tapStartLocNormed = [0; rand(numTaps-1, 1)];
-tapAmpsNormed = getTapAmplitude(tapStartLocNormed);
+tapStartLocNormed = linspace(0, 1, numTaps);
+tapAmpsNormed = ones(numTaps, 1);
 
 % Generate tap samples.
 numSampsPerTap = ceil(sampleRate.*TDLTapWidthInS);
@@ -46,8 +47,9 @@ numSampsPerTapHalf = floor(numSampsPerTap/2);
 tapStartSampleIndices ...
     = floor(tapStartLocNormed'.*(numSamps-numSampsPerTap))+1;
 
-% Some randomness is introduced to perturb the tap amplitudes.
-randomRatioForAmplitude = 0.1;
+% Unlike the original TDL model, no randomness is introduced to perturb the
+% tap amplitudes in this case.
+randomRatioForAmplitude = 0;
 for idxTap = 1:numTaps
     curTapAmp = tapAmpsNormed(idxTap) ...
         .*(1-randomRatioForAmplitude+rand(1).*randomRatioForAmplitude.*2);

@@ -10,9 +10,9 @@ addpath(genpath(fullfile(pwd, 'lib')));
 % Purdue mm-wave data. Please make sure it is correct for the machine which
 % will run this script.
 %  - On (quite powerful) Windows Artsy:
-absPathWinArtsy = 'D:\One Drive - Purdue\OneDrive - purdue.edu\EARS\Purdue Measurement Campaign';
+absPathWinArtsy = 'D:\One Drive - Purdue\OneDrive - purdue.edu\EARS\2019_Purdue Measurement Campaign';
 %  - Local copy on Windows Dell:
-absPathWinDell = 'C:\Users\Zyglabs\OneDrive - purdue.edu\EARS\Purdue Measurement Campaign';
+absPathWinDell = 'C:\Users\Zyglabs\OneDrive - purdue.edu\EARS\2019_Purdue Measurement Campaign';
 unknownComputerErrorMsg = ...
     ['Compute not recognized... \n', ...
     '    Please update setPath.m for your machine. '];
